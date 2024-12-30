@@ -429,11 +429,12 @@ void LunaHost::on_info(HOSTINFO type, const std::wstring &warning)
 void LunaHost::on_thread_create(TextThread &thread)
 {
     wchar_t buff[65535];
-    swprintf_s(buff, L"%I64X:%s:%s:%I32X:%I64X:%I64X",
+    swprintf_s(buff, L"%I64X:%s (%s) %I32X:%I64X:%I64X:%I64X",
                thread.handle,
                thread.name.c_str(),
                thread.hp.hookcode,
                thread.tp.processId,
+               thread.tp.addr,
                thread.tp.ctx,
                thread.tp.ctx2);
     int index = g_hListBox_listtext->additem(buff, NULL);
