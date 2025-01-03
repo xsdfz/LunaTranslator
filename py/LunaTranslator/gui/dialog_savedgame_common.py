@@ -33,7 +33,7 @@ from gui.usefulwidget import (
 
 def showcountgame(window, num):
     if num:
-        window.setWindowTitle("游戏管理____-_" + str(num))
+        window.setWindowTitle("游戏管理__-__" + str(num))
     else:
         window.setWindowTitle("游戏管理")
 
@@ -384,7 +384,7 @@ class dialog_syssetting(LDialog):
         )
 
         formLayout.addRow(SplitLine())
-        if type_ == 1:
+        if type_ == 2:
             for key, name in [
                 ("itemw", "宽度"),
                 ("itemh", "高度"),
@@ -414,7 +414,7 @@ class dialog_syssetting(LDialog):
                 ),
             )
 
-        elif type_ == 2:
+        elif type_ == 1:
             for key, name in [
                 ("listitemheight", "高度"),
             ]:

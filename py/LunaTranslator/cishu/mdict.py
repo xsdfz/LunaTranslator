@@ -1,8 +1,8 @@
 import math, base64, uuid, gobject
 from cishu.cishubase import DictTree
-from myutils.config import isascii
+from myutils.config import isascii, globalconfig
 from traceback import print_exc
-from myutils.audioplayer import bass_decode
+from myutils.audioplayer import bass_code_cast
 import json, os
 
 cachejson = None
@@ -1703,6 +1703,24 @@ import hashlib
 
 class IndexBuilder(object):
     # todo: enable history
+    def checkinfo(self, fn):
+        return "{}_{}".format(os.path.getmtime(fn), os.path.getsize(fn))
+
+    def checkneedupdate(self, md, db):
+        if not os.path.isfile(db):
+            return True
+        need = True
+        try:
+            with open(db + ".txt", "r") as ff:
+                need = self.checkinfo(md) != ff.read()
+        except:
+            pass
+        return need
+
+    def checkneedupdateafter(self, md, db):
+        with open(db + ".txt", "w") as ff:
+            ff.write(self.checkinfo(md))
+
     def __init__(
         self,
         fname,
@@ -1734,8 +1752,7 @@ class IndexBuilder(object):
         self._mdx_db = _targetfilenamebase + ".mdx.db"
         # make index anyway
 
-        if not os.path.isfile(self._mdx_db):
-            self._make_mdx_index(self._mdx_db)
+        self._make_mdx_index_checked(self._mdx_db)
 
         if os.path.isfile(self._mdx_db):
             # read from META table
@@ -1745,14 +1762,6 @@ class IndexBuilder(object):
             # 判断有无版本号
             for cc in cursor:
                 self._version = cc[1]
-            ################# if not version in fo #############
-            if not self._version:
-                print("version info not found")
-                conn.close()
-                self._make_mdx_index(self._mdx_db)
-                print("mdx.db rebuilt!")
-                self.makemdds(_filename, _targetfilenamebase)
-                return None
             cursor = conn.execute('SELECT * FROM META WHERE key = "encoding"')
             for cc in cursor:
                 self._encoding = cc[1]
@@ -1768,18 +1777,6 @@ class IndexBuilder(object):
             for cc in cursor:
                 self._description = cc[1]
 
-            # for cc in cursor:
-            #    if cc[0] == 'encoding':
-            #        self._encoding = cc[1]
-            #        continue
-            #    if cc[0] == 'stylesheet':
-            #        self._stylesheet = json.loads(cc[1])
-            #        continue
-            #    if cc[0] == 'title':
-            #        self._title = cc[1]
-            #        continue
-            #    if cc[0] == 'title':
-            #        self._description = cc[1]
         self.makemdds(_filename, _targetfilenamebase)
 
     def makemdds(self, _filename, _targetfilenamebase):
@@ -1791,8 +1788,7 @@ class IndexBuilder(object):
             if os.path.isfile(_filename + end):
                 self._mdd_files.append(_filename + end)
                 self._mdd_dbs.append(_targetfilenamebase + end + ".db")
-                if not os.path.isfile(self._mdd_dbs[-1]):
-                    self._make_mdd_index(self._mdd_files[-1], self._mdd_dbs[-1])
+                self._make_mdd_index_checked(self._mdd_files[-1], self._mdd_dbs[-1])
             else:
                 break
 
@@ -1808,6 +1804,16 @@ class IndexBuilder(object):
             else:
                 txt_styled = txt_styled + style[0] + p + style[1]
         return txt_styled
+
+    def _make_mdd_index_checked(self, mdd, db_name):
+        if self.checkneedupdate(mdd, db_name):
+            self._make_mdd_index(mdd, db_name)
+            self.checkneedupdateafter(mdd, db_name)
+
+    def _make_mdx_index_checked(self, db_name):
+        if self.checkneedupdate(self._mdx_file, db_name):
+            self._make_mdx_index(db_name)
+            self.checkneedupdateafter(self._mdx_file, db_name)
 
     def _make_mdx_index(self, db_name):
         if os.path.exists(db_name):
@@ -2288,104 +2294,24 @@ class mdict(cishubase):
             return _type, file_content
 
         if url.startswith("entry://"):
-            return 3, "javascript:safe_mdict_entry_call('{}')".format(url[8:])
+            return 3, "javascript:safe_mdict_search_word('{}')".format(url[8:])
         if url.startswith("sound://"):
             file_content = self.parse_url_in_mdd(index, url[8:])
             if not file_content:
                 return
-            ext = os.path.splitext(url)[1].lower()
-            if ext in (".aac", ".spx", ".opus"):
-                mp3 = bass_decode(file_content, ext)
-                if not mp3:
-                    print(ext, "decode error")
-                    return
-                file_content = mp3
-                ext = ".mp3"
+            ext = os.path.splitext(url)[1].lower()[1:]
+            if True:  # ext in ("aac", "spx", "opus"):
+                new, ext = bass_code_cast(file_content, fr=ext)
+                file_content = new
             varname = "var_" + hashlib.md5(file_content).hexdigest()
             audiob64vals[varname] = base64.b64encode(file_content).decode()
             return 3, "javascript:mdict_play_sound('{}',{})".format(
-                query_mime(ext), varname
+                query_mime("." + ext), varname
             )
         file_content = self.parse_url_in_mdd(index, url)
         if not file_content:
             return
         return _type, file_content
-
-    def tryparsecss(self, file_content, divid):
-        try:
-            file_content = file_content.decode("utf8")
-        except:
-            return ""
-        if file_content.startswith("<style>") and file_content.endswith("</style>"):
-            file_content = file_content[7:-8]
-        try:
-            from tinycss2 import parse_stylesheet, serialize
-            from tinycss2.ast import (
-                WhitespaceToken,
-                AtRule,
-                QualifiedRule,
-                ParseError,
-                LiteralToken,
-            )
-
-            rules = parse_stylesheet(file_content, True, True)
-
-            def parseaqr(rule: QualifiedRule):
-                start = True
-                idx = 0
-                skip = False
-                for token in rule.prelude.copy():
-                    if skip and token.type == "whitespace":
-                        skip = False
-                        idx += 1
-                        continue
-                    if start:
-                        if token.type == "ident" and token.value == "body":
-                            # body
-                            rule.prelude.insert(
-                                idx + 1, LiteralToken(0, 0, "." + divid)
-                            )
-                            rule.prelude.insert(idx + 1, WhitespaceToken(0, 0, " "))
-                            idx += 2
-                        else:
-                            # .id tag
-                            # tag
-                            # #class tag
-                            rule.prelude.insert(idx, WhitespaceToken(0, 0, " "))
-                            rule.prelude.insert(
-                                idx, LiteralToken(0, 0, "." + divid + " ")
-                            )
-                            idx += 2
-                        start = False
-                    elif token.type == "literal" and token.value == ",":
-                        # 有多个限定符
-                        start = True
-                        skip = True
-                    idx += 1
-
-            def parserules(rules):
-                # print(stylesheet)
-                for i, rule in enumerate(rules.copy()):
-                    if isinstance(rule, AtRule):
-                        if not rule.content:
-                            # @charset "UTF-8";
-                            continue
-                        internal = parse_stylesheet(rule.content, True, True)
-                        if len(internal) and isinstance(internal[0], ParseError):
-                            # @font-face
-                            continue
-                        # @....{ .klas{} }
-                        rule.content = parserules(internal)
-                    elif isinstance(rule, QualifiedRule):
-                        parseaqr(rules[i])
-                return rules
-
-            file_content = serialize(parserules(rules))
-            # print(file_content)
-        except:
-
-            print_exc()
-        return file_content
 
     def repairtarget(
         self,
@@ -2394,7 +2320,7 @@ class mdict(cishubase):
         html_content: str,
         audiob64vals: dict,
         hrefsrcvals: dict,
-        divid: str,
+        divclass: str,
         csscollect: dict,
     ):
         base = os.path.dirname(fn)
@@ -2428,7 +2354,9 @@ class mdict(cishubase):
             elif _type == 3:
                 html_content = html_content.replace(url, file_content)
             elif _type == 1:
-                css = self.tryparsecss(file_content, divid)
+                css = self.parse_stylesheet(
+                    file_content.decode("utf8", errors="ignore"), divclass
+                )
                 if css:
                     csscollect[url] = css
                     html_content = html_content.replace(url, "")
@@ -2440,7 +2368,7 @@ class mdict(cishubase):
                     base64.b64encode(file_content).decode(),
                 )
                 html_content = html_content.replace(url, varname)
-        return '<div class="{}">{}</div>'.format(divid, html_content)
+        return '<div class="{}">{}</div>'.format(divclass, html_content)
 
     def searchthread_internal(self, index, k, __safe):
         allres = []
@@ -2473,11 +2401,11 @@ class mdict(cishubase):
             print_exc()
         if not results:
             return
-        divid = "luna_" + str(uuid.uuid4())
+        divclass = "luna_" + str(uuid.uuid4())
         csscollect = {}
         for i in range(len(results)):
             results[i] = self.repairtarget(
-                index, f, results[i], audiob64vals, hrefsrcvals, divid, csscollect
+                index, f, results[i], audiob64vals, hrefsrcvals, divclass, csscollect
             )
         collectresult = "".join(results)
         if csscollect:
@@ -2515,7 +2443,7 @@ class mdict(cishubase):
                 )
             )
             idx += 1
-        commonstyle = """
+        res = """
 <script>
 function onclickbtn_mdict_internal(_id) {
     tabPanes = document.querySelectorAll('.tab-widget_mdict_internal .tab-pane_mdict_internal');
@@ -2542,7 +2470,7 @@ function onclickbtn_mdict_internal(_id) {
 }
 
 .tab-widget_mdict_internal .tab-button_mdict_internal {
-    padding: 5px 20px;
+    padding: 10px 20px;
     background-color: #cccccccc;
     border: none;
     cursor: pointer;
@@ -2556,18 +2484,15 @@ function onclickbtn_mdict_internal(_id) {
 
 .tab-widget_mdict_internal .tab-content_mdict_internal .tab-pane_mdict_internal {
     display: none;
+    padding: 10px;
 }
 
 .tab-widget_mdict_internal .tab-content_mdict_internal .tab-pane_mdict_internal.active {
     display: block;
 }
-</style>
-"""
-
-        res = """
-    {commonstyle}
+</style>"""
+        res += """
 <div class="tab-widget_mdict_internal">
-
     <div class="centerdiv_mdict_internal"><div>
         {btns}
     </div>
@@ -2579,7 +2504,7 @@ function onclickbtn_mdict_internal(_id) {
     </div>
 </div>
 """.format(
-            commonstyle=commonstyle, btns="".join(btns), contents="".join(contents)
+            btns="".join(btns), contents="".join(contents)
         )
         return res
 
@@ -2601,8 +2526,7 @@ function onclickbtn_mdict_internal(_id) {
         display: none;
         padding: 10px;
         border: 1px solid #ddd;
-    }</style>"""
-        content += """
+    }</style>
 <script>
 function mdict_flowstyle_clickcallback(_id)
 {
@@ -2657,6 +2581,12 @@ for(let i=0;i<elements.length;i++)
 }
 var lastmusicplayer=false;
 function mdict_play_sound(ext, b64){
+
+if(window.luna_audio_play_b64)
+        window.luna_audio_play_b64(b64)
+    else if(window.LUNAJSObject)
+        window.LUNAJSObject.luna_audio_play_b64(b64)
+    else{
     const music = new Audio();
     music.src="data:"+ext+";base64,"+b64
     if(lastmusicplayer!=false)
@@ -2665,12 +2595,13 @@ function mdict_play_sound(ext, b64){
     }
     lastmusicplayer=music
     music.play();
+    }
 }
-function safe_mdict_entry_call(word){
-    if(window.mdict_entry_call)
-        window.mdict_entry_call(word)
+function safe_mdict_search_word(word){
+    if(window.luna_search_word)
+        window.luna_search_word(word)
     else if(window.LUNAJSObject)
-        window.LUNAJSObject.mdict_entry_call(word)
+        window.LUNAJSObject.luna_search_word(word)
 }"""
         for varname, val in audiob64vals.items():
             func += '{}="{}"\n'.format(varname, val)

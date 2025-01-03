@@ -224,10 +224,6 @@ int PyStand::DetectScript()
 	}
 	SetEnvironmentVariableW(L"PYSTAND_SCRIPT", _script.c_str());
 
-	std::vector<wchar_t> buffer(MAX_PATH);
-	GetModuleFileNameW(GetModuleHandle(0), buffer.data(), MAX_PATH);
-	SetEnvironmentVariableW(L"LUNA_EXE_NAME", buffer.data());
-
 	return 0;
 }
 
@@ -327,11 +323,11 @@ int main()
 {
 	{
 		// 当更新进行时，禁止启动
-		AutoHandle hMutex = CreateMutex(NULL, FALSE, L"LUNA_UPDATER_SINGLE");
+		CHandle hMutex{CreateMutex(NULL, FALSE, L"LUNA_UPDATER_SINGLE")};
 		if (GetLastError() == ERROR_ALREADY_EXISTS)
 			return 0;
 	}
-	auto __handle = AutoHandle(CreateMutexA(&allAccess, FALSE, "LUNA_UPDATER_BLOCK"));
+	CHandle __handle{CreateMutexA(&allAccess, FALSE, "LUNA_UPDATER_BLOCK")};
 	PyStand ps(L"files\\runtime");
 	if (ps.DetectScript() != 0)
 	{

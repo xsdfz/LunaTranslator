@@ -21,6 +21,7 @@ import threading, winreg
 import re, heapq, winsharedutils
 from myutils.wrapper import tryprint, threader
 from html.parser import HTMLParser
+from myutils.audioplayer import bass_code_cast
 
 
 def qimage2binary(qimage: QImage, fmt="BMP"):
@@ -90,7 +91,7 @@ def getlangtgt():
 def getlanguagespace(lang=None):
     if lang is None:
         lang = getlanguse()
-    return "" if (lang in ("zh", "ja", "cht")) else " "
+    return "" if (lang.split("-")[0] in ("zh", "ja", "cht")) else " "
 
 
 def findenclose(text, tag):
@@ -113,8 +114,18 @@ def findenclose(text, tag):
             text = text[len(tage) :]
             collect += tage
         else:
-            collect += text[0]
-            text = text[1:]
+            _1 = text.find(tags)
+            _2 = text.find(tage)
+            if _1 != -1 and _2 != -1:
+                m = min(_1, _2)
+            elif _1 != -1:
+                m = _1
+            elif _2 != -1:
+                m = _2
+            else:
+                break
+            collect += text[:m]
+            text = text[m:]
         if i == 0:
             break
 
@@ -839,17 +850,11 @@ class loopbackrecorder:
         wav = self.capture.stop()
         if not wav:
             return callback("")
-        mp3 = winsharedutils.encodemp3(wav)
-        if not mp3:
-            file = gobject.gettempdir(str(time.time()) + ".wav")
-            with open(file, "wb") as ff:
-                ff.write(wav)
-            callback(file)
-        else:
-            file = gobject.gettempdir(str(time.time()) + ".mp3")
-            with open(file, "wb") as ff:
-                ff.write(mp3)
-            callback(file)
+        new, ext = bass_code_cast(wav, "wav")
+        file = gobject.gettempdir(str(time.time()) + "." + ext)
+        with open(file, "wb") as ff:
+            ff.write(new)
+        callback(file)
 
 
 def copytree(src, dst, copy_function=shutil.copy2):

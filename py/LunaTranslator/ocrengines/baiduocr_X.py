@@ -1,7 +1,7 @@
 import base64
 from myutils.config import globalconfig
 from ocrengines.baseocrclass import baseocr
-import random
+import random, zhconv
 from hashlib import md5
 
 
@@ -27,7 +27,14 @@ class OCR(baseocr):
 
         try:
             js = response.json()
-            text = [_["dst"] for _ in js["data"]["content"]]
+            text = [
+                (
+                    zhconv.convert(_["dst"], "zh-tw")
+                    if ("cht" == self.tgtlang_1)
+                    else _["dst"]
+                )
+                for _ in js["data"]["content"]
+            ]
             box = [
                 (
                     l["points"][0]["x"],
@@ -87,7 +94,14 @@ class OCR(baseocr):
 
         try:
             js = response.json()
-            text = [_["src"] for _ in js["data"]["content"]]
+            text = [
+                (
+                    zhconv.convert(_["dst"], "zh-tw")
+                    if ("cht" == self.tgtlang_1)
+                    else _["dst"]
+                )
+                for _ in js["data"]["content"]
+            ]
             box = [
                 (
                     l["points"][0]["x"],
@@ -108,24 +122,25 @@ class OCR(baseocr):
     @property
     def srclangx(self):
         return {
+            "cht": "zh",
             "es": "spa",
             "ko": "kor",
             "fr": "fra",
             "ja": "jp",
-            "cht": "cht",
             "vi": "vie",
             "uk": "ukr",
             "ar": "ara",
+            "sv": "swe",
         }.get(self.srclang_1, self.srclang_1)
 
     @property
     def tgtlangx(self):
         return {
+            "cht": "zh",
             "es": "spa",
             "ko": "kor",
             "fr": "fra",
             "ja": "jp",
-            "cht": "cht",
             "vi": "vie",
             "uk": "ukr",
             "ar": "ara",
@@ -134,13 +149,24 @@ class OCR(baseocr):
     def langmap(self):
         return {
             "auto": "auto_detect",
+            "cht": "CHN_ENG",
             "zh": "CHN_ENG",
             "en": "ENG",
             "ja": "JAP",
-            "en": "ENG",
             "ko": "KOR",
             "fr": "FRE",
             "es": "SPA",
+            "pt": "POR",
+            "de": "GER",
+            "it": "ITA",
+            "ru": "RUS",
+            "nl": "DUT",
+            "sv": "SWE",
+            "pl": "POL",
+            "tr": "TUR",
+            "th": "THA",
+            "vi": "VIE",
+            "ar": "ARA",
         }
 
     def initocr(self):
@@ -209,6 +235,11 @@ class OCR(baseocr):
             "detect_direction": int(globalconfig["verticalocr"]) != 0,
             "language_type": self.srclang,
         }
+
+        if self.config["接口"] in [0, 1]:
+            if self.srclang_1 == "auto":
+                data["detect_language"] = True
+                data.pop("language_type")
         interfacetype = self.config["接口"]
 
         url = [

@@ -34,6 +34,7 @@ from gui.usefulwidget import (
     getIconButton,
     saveposwindow,
     tabadd_lazy,
+    VisLFormLayout,
 )
 from gui.dynalang import (
     LPushButton,
@@ -45,6 +46,7 @@ from gui.dynalang import (
     LMainWindow,
     LAction,
 )
+from myutils.audioplayer import bass_code_cast
 
 
 def getimageformat():
@@ -62,7 +64,8 @@ class AnkiWindow(QWidget):
     def callbacktts(self, edit, sig, data):
         if sig != edit.sig:
             return
-        fname = gobject.gettempdir(str(uuid.uuid4()) + ".mp3")
+        data, ext = bass_code_cast(data, "mp3")
+        fname = gobject.gettempdir(str(uuid.uuid4()) + "." + ext)
         with open(fname, "wb") as ff:
             ff.write(data)
         self.settextsignal.emit(edit, os.path.abspath(fname))
@@ -330,7 +333,7 @@ class AnkiWindow(QWidget):
             ff.write(model_css)
 
     def creatsetdtab(self, baselay):
-        layout = LFormLayout()
+        layout = VisLFormLayout()
         wid = QWidget()
         wid.setLayout(layout)
         baselay.addWidget(wid)
@@ -384,6 +387,39 @@ class AnkiWindow(QWidget):
             "成功添加后关闭窗口",
             getsimpleswitch(globalconfig["ankiconnect"], "addsuccautoclose"),
         )
+        cnt = layout.rowCount() + 1
+
+        def __(xx):
+            i = ["mp3", "opus"].index(xx)
+            layout.setRowVisible(cnt + 0, False)
+            layout.setRowVisible(cnt + 1, False)
+            layout.setRowVisible(cnt + i, True)
+
+        layout.addRow(
+            "音频编码",
+            getsimplecombobox(
+                ["mp3", "opus(ogg)"],
+                globalconfig,
+                "audioformat",
+                internal=["mp3", "opus"],
+                callback=__,
+            ),
+        )
+
+        layout.addRow(
+            "MP3 bitrate",
+            getsimplecombobox(
+                [str(8 * i) for i in range(1, 320 // 8 + 1)],
+                globalconfig,
+                "mp3kbps",
+                internal=[8 * i for i in range(1, 320 // 8 + 1)],
+            ),
+        )
+        layout.addRow(
+            "OPUS bitrate",
+            getspinbox(6, 256, globalconfig, "opusbitrate"),
+        )
+        __(globalconfig["audioformat"])
 
     def vistranslate_rank(self):
         listediter(
@@ -459,6 +495,29 @@ class AnkiWindow(QWidget):
             clearbtn.clicked.connect(lambda: target.clear())
             return clearbtn
 
+        class ctrlbedit(FQPlainTextEdit):
+            def keyPressEvent(self, e):
+                if (
+                    e.modifiers() == Qt.KeyboardModifier.ControlModifier
+                    and e.key() == Qt.Key.Key_B
+                ):
+                    cursor = self.textCursor()
+                    if cursor.hasSelection():
+                        selected_text = cursor.selectedText()
+                        new_text = "<b>{}</b>".format(selected_text)
+
+                        start = cursor.selectionStart()
+
+                        cursor.beginEditBlock()
+                        cursor.insertText(new_text)
+                        cursor.endEditBlock()
+                        cursor.setPosition(start, QTextCursor.MoveMode.MoveAnchor)
+                        cursor.setPosition(
+                            start + len(new_text), QTextCursor.MoveMode.KeepAnchor
+                        )
+                        self.setTextCursor(cursor)
+                return super().keyPressEvent(e)
+
         self.audiopath = QLineEdit()
         self.audiopath.setReadOnly(True)
         self.audiopath_sentence = QLineEdit()
@@ -467,8 +526,8 @@ class AnkiWindow(QWidget):
         self.editpath.setReadOnly(True)
         self.viewimagelabel = pixmapviewer()
         self.editpath.textChanged.connect(self.wrappedpixmap)
-        self.example = FQPlainTextEdit()
-        self.zhuyinedit = FQPlainTextEdit()
+        self.example = ctrlbedit()
+        self.zhuyinedit = ctrlbedit()
         self.wordedit = FQLineEdit()
         self.wordedit.textChanged.connect(self.wordedit_t)
         self.example.hiras = None
@@ -477,7 +536,7 @@ class AnkiWindow(QWidget):
             self.example.hiras = None
 
         self.example.textChanged.connect(__)
-        self.remarks = FQPlainTextEdit()
+        self.remarks = ctrlbedit()
         recordbtn1 = statusbutton(icons=["fa.microphone", "fa.stop"])
         recordbtn1.clicked.connect(
             functools.partial(self.startorendrecord, 1, self.audiopath)
@@ -1085,7 +1144,7 @@ class searchwordW(closeashidewindow):
             html = self.cache_results[self.tabks[idx]]
         except:
             return
-        self.textOutput.setHtml(html)
+        self.textOutput.setHtml("<style>body{margin:0}</style>" + html)
 
     def searchwinnewwindow(self, word):
 
@@ -1206,10 +1265,15 @@ class searchwordW(closeashidewindow):
             functools.partial(globalconfig.__setitem__, "ZoomFactor")
         )
         self.textOutput.bind(
-            "mdict_entry_call", lambda word: self.search_word.emit(word, False)
+            "luna_search_word", lambda word: self.search_word.emit(word, False)
+        )
+        self.textOutput.bind(
+            "luna_audio_play_b64",
+            lambda b64: gobject.baseobject.audioplayer.play(
+                base64.b64decode(b64.encode()), force=True
+            ),
         )
         self.cache_results = {}
-        self.hiding = True
 
         self.spliter = QSplitter()
 

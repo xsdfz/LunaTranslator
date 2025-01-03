@@ -9,18 +9,15 @@ from ctypes import (
     c_int,
     c_void_p,
     cast,
-    memmove,
     create_unicode_buffer,
-    create_string_buffer,
     c_size_t,
     windll,
     c_double,
     c_char,
     CFUNCTYPE,
-    c_long,
 )
-from ctypes.wintypes import WORD, HWND, DWORD, RECT, UINT, HANDLE
-import gobject, windows
+from ctypes.wintypes import WORD, HWND, DWORD, RECT, HANDLE
+import gobject, windows, functools
 
 utilsdll = CDLL(gobject.GetDllpath(("winsharedutils32.dll", "winsharedutils64.dll")))
 
@@ -126,30 +123,16 @@ html_resize = utilsdll.html_resize
 html_resize.argtypes = c_void_p, c_uint, c_uint, c_uint, c_uint
 html_release = utilsdll.html_release
 html_release.argtypes = (c_void_p,)
-_html_get_current_url = utilsdll.html_get_current_url
-_html_get_current_url.argtypes = (c_void_p, c_void_p)
+html_get_current_url = utilsdll.html_get_current_url
+html_get_current_url.argtypes = (c_void_p, c_void_p)
 html_set_html = utilsdll.html_set_html
 html_set_html.argtypes = (c_void_p, c_wchar_p)
 html_add_menu = utilsdll.html_add_menu
-html_add_menu.argtypes = (c_void_p, c_int, c_int, c_wchar_p)
-_html_get_select_text = utilsdll.html_get_select_text
-_html_get_select_text.argtypes = (c_void_p, c_void_p)
-
-
-def html_get_current_url(__):
-    _ = []
-    _html_get_current_url(__, CFUNCTYPE(None, c_wchar_p)(_.append))
-    if _:
-        return _[0]
-    return ""
-
-
-def html_get_select_text(__):
-    _ = []
-    _html_get_select_text(__, CFUNCTYPE(None, c_wchar_p)(_.append))
-    if _:
-        return _[0]
-    return ""
+html_add_menu_cb = CFUNCTYPE(c_void_p, c_wchar_p)
+html_add_menu.argtypes = (c_void_p, c_int, c_wchar_p, html_add_menu_cb)
+html_get_select_text = utilsdll.html_get_select_text
+html_get_select_text_cb = CFUNCTYPE(None, c_wchar_p)
+html_get_select_text.argtypes = (c_void_p, c_void_p)
 
 
 html_bind_function_FT = CFUNCTYPE(None, POINTER(c_wchar_p), c_int)
@@ -172,17 +155,6 @@ def GetLnkTargetPath(lnk):
     dirp = create_unicode_buffer(MAX_PATH + 1)
     _GetLnkTargetPath(lnk, exe, arg, icon, dirp)
     return exe.value, arg.value, icon.value, dirp.value
-
-
-_otsu_binary = utilsdll.otsu_binary
-_otsu_binary.argtypes = c_void_p, c_int
-
-
-def otsu_binary(image, thresh):
-    buf = create_string_buffer(len(image))
-    memmove(buf, image, len(image))
-    _otsu_binary(buf, thresh)
-    return buf
 
 
 _extracticon2data = utilsdll.extracticon2data
@@ -351,27 +323,6 @@ clipboard_callback.restype = HWND
 clipboard_callback_stop = utilsdll.clipboard_callback_stop
 clipboard_callback_stop.argtypes = (HWND,)
 clipboard_callback_type = CFUNCTYPE(None, c_wchar_p, c_bool)
-
-_encodemp3 = utilsdll.encodemp3
-_encodemp3.argtypes = c_void_p, c_size_t, c_void_p, c_int
-
-
-def encodemp3(wav, bitr=320):
-    ret = []
-
-    def cb(ptr, size):
-        ret.append(cast(ptr, POINTER(c_char))[:size])
-
-    _encodemp3(wav, len(wav), CFUNCTYPE(None, c_void_p, c_size_t)(cb), bitr)
-    if len(ret):
-        return ret[0]
-    return None
-
-
-GetMonitorDpiScaling = utilsdll.GetMonitorDpiScaling
-GetMonitorDpiScaling.argtypes = (HWND,)
-GetMonitorDpiScaling.restype = UINT
-
 StartCaptureAsync_cb = CFUNCTYPE(None, c_void_p, c_size_t)
 StartCaptureAsync = utilsdll.StartCaptureAsync
 StartCaptureAsync.argtypes = (StartCaptureAsync_cb,)
@@ -392,3 +343,9 @@ def GetSelectedText():
     if len(ret):
         return ret[0]
     return None
+
+
+get_allAccess_ptr = utilsdll.get_allAccess_ptr
+get_allAccess_ptr.restype = c_void_p
+windows.CreateEvent = functools.partial(windows.CreateEvent, psecu=get_allAccess_ptr())
+windows.CreateMutex = functools.partial(windows.CreateMutex, psecu=get_allAccess_ptr())
